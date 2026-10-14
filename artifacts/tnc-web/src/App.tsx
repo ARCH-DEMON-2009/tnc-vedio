@@ -6,7 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import BannedScreen from "@/components/BannedScreen";
 import PageLoader from "@/components/PageLoader";
 import SecurityGuard from "@/components/SecurityGuard";
-import { getTelegramInitData, getTelegramUser, readyTelegramApp, expandTelegramApp, isTelegramWebApp, openExternalLink } from "@/lib/telegram";
+import { getTelegramInitData, getTelegramUser, readyTelegramApp, expandTelegramApp, isTelegramWebApp } from "@/lib/telegram";
 
 import HomePage from "@/pages/home";
 import CoursesPage from "@/pages/courses";
@@ -20,16 +20,8 @@ import WatchPage from "@/pages/watch";
 import PdfViewerPage from "@/pages/pdf-viewer";
 import NotFound from "@/pages/not-found";
 import LeaderboardPage from "@/pages/leaderboard";
-
-const TEST_SERIES_URL = "https://test.tncnursing.site/tnc-tests";
-
-// Redirect component — immediately opens the external test series and goes back
-function TestSeriesRedirect() {
-  useEffect(() => {
-    openExternalLink(TEST_SERIES_URL);
-  }, []);
-  return null;
-}
+import QuizPage from "@/pages/quiz";
+import QuizTakePage from "@/pages/quiz-take";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -93,8 +85,8 @@ function Router() {
       <Route path="/watched" component={WatchedPage} />
       <Route path="/enotes" component={EnotesPage} />
       <Route path="/leaderboard" component={LeaderboardPage} />
-      <Route path="/quiz" component={TestSeriesRedirect} />
-      <Route path="/quiz/:examId" component={TestSeriesRedirect} />
+      <Route path="/quiz" component={QuizPage} />
+      <Route path="/quiz/:examId" component={QuizTakePage} />
       <Route path="/admin" component={AdminPage} />
       <Route path="/watch/:sessionId" component={WatchPage} />
       <Route path="/pdf/:sessionId" component={PdfViewerPage} />

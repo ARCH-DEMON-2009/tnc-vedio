@@ -6,7 +6,6 @@ import { motion } from "framer-motion";
 import Layout from "@/components/Layout";
 import { getStreakData } from "@/lib/streak";
 import { getUser } from "@/lib/auth";
-import { openExternalLink } from "@/lib/telegram";
 
 function SliderCarousel() {
   const { data: sliders, isLoading } = useGetSliders();
@@ -131,12 +130,12 @@ function StreakWidget() {
           >
             <Video size={14} /> Watch a video
           </Link>
-          <button
-            onClick={() => openExternalLink("https://test.tncnursing.site/tnc-tests")}
+          <Link
+            href="/quiz"
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/20 hover:bg-white/30 text-sm font-semibold transition-colors"
           >
             <Brain size={14} /> Take a quiz
-          </button>
+          </Link>
         </div>
       </div>
     </motion.div>
@@ -411,12 +410,12 @@ export default function HomePage() {
                     {label}
                   </Link>
                 ))}
-                <button
-                  onClick={() => openExternalLink("https://test.tncnursing.site/tnc-tests")}
+                <Link
+                  href="/quiz"
                   className="block text-white/70 hover:text-white text-sm transition-colors text-left"
                 >
                   Mock Tests
-                </button>
+                </Link>
               </div>
             </div>
             <div>

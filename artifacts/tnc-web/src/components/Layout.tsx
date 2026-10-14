@@ -4,12 +4,12 @@ import { BookOpen, Video, FileText, Home, LogOut, Shield, Menu, X, ChevronRight,
 import { getUser, isAdmin, clearAdminToken } from "@/lib/auth";
 import { openExternalLink } from "@/lib/telegram";
 import { getTelegramUser } from "@/lib/telegram";
+import TncLoginPrompt from "@/components/TncLoginPrompt";
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
-const TEST_SERIES_URL = "https://test.tncnursing.site/tnc-tests";
 const SUPPORT_URL = "https://t.me/testsagarbot";
 const CHANNEL_URL = "https://t.me/tnc_test_series_free";
 
@@ -21,7 +21,7 @@ const navItems: NavItem[] = [
   { path: "/", label: "Home", icon: Home },
   { path: "/videos", label: "Videos", icon: Video },
   { path: "/watched", label: "Watched", icon: History },
-  { path: "/quiz", label: "Quiz", icon: Brain, external: TEST_SERIES_URL },
+  { path: "/quiz", label: "Quiz", icon: Brain },
   { path: "/enotes", label: "E-Notes", icon: FileText },
   { path: "/leaderboard", label: "Leaderboard", icon: Trophy },
   { path: "/courses", label: "Courses", icon: BookOpen },
@@ -391,6 +391,7 @@ export default function Layout({ children }: LayoutProps) {
         <VisitorGreeting />
         {children}
       </main>
+      <TncLoginPrompt enabled={location === "/courses" || location.startsWith("/courses/") || location === "/quiz" || location.startsWith("/quiz/")} />
 
       {/* Mobile Bottom Tabs */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-40 flex" style={{ backgroundColor: "hsl(var(--card))" }}>

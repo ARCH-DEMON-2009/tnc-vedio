@@ -32,6 +32,17 @@ create table if not exists public.app_users (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.tnc_shared_session (
+  id text primary key check (id = 'shared'),
+  token text not null,
+  expires_at timestamptz,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.tnc_shared_session enable row level security;
+revoke all on table public.tnc_shared_session from anon, authenticated;
+grant all on table public.tnc_shared_session to service_role;
+
 create table if not exists public.study_sessions (
   id bigserial primary key,
   telegram_id bigint not null references public.bot_users(telegram_id) on delete cascade,

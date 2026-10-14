@@ -58,6 +58,7 @@ export default function QuizTakePage() {
     let correct = 0;
     let wrong = 0;
     let unattempted = 0;
+    const marksPerQuestion = questions.length > 0 ? (quiz?.maxMarks ?? 0) / questions.length : 0;
 
     for (const q of questions) {
       const selected = currentAnswers[q.rowId];
@@ -66,7 +67,7 @@ export default function QuizTakePage() {
         continue;
       }
       if (selected.toUpperCase() === q.correctAnswer.toUpperCase()) {
-        score += 1;
+        score += marksPerQuestion;
         correct++;
       } else {
         score -= (quiz?.negativeMarks ?? 0.25);
@@ -74,15 +75,14 @@ export default function QuizTakePage() {
       }
     }
 
-    const finalScore = Math.max(0, score);
     const percentage = questions.length > 0
       ? Math.round((correct / questions.length) * 100)
       : 0;
 
-    setResults({ score: finalScore, correct, wrong, unattempted, percentage });
+    setResults({ score, correct, wrong, unattempted, percentage });
     markQuizCompleted(examId ?? "");
     setPhase("results");
-  }, [questions, quiz?.negativeMarks, examId]);
+  }, [questions, quiz?.maxMarks, quiz?.negativeMarks, examId]);
 
   // Timer
   useEffect(() => {
