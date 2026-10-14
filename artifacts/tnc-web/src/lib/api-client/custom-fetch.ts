@@ -364,6 +364,13 @@ export async function customFetch<T = unknown>(
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);
+    if (
+      response.status === 428 &&
+      getStringField(errorData, "code") === "TNC_LOGIN_REQUIRED" &&
+      typeof window !== "undefined"
+    ) {
+      window.dispatchEvent(new Event("tnc-session-required"));
+    }
     throw new ApiError(response, errorData, requestInfo);
   }
 

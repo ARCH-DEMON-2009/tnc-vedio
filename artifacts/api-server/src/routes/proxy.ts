@@ -3,6 +3,7 @@ import { logger } from "../lib/logger";
 import { getCachedFirebaseVideoUrl, isFirebaseConfigured, isUserAuthConfigured, isServiceAccountConfigured, signInWithEmailPassword, streamFirebaseVideo } from "../lib/firebase-rest";
 import { authenticateAppUser, createAppUser, findAppUser, listAppUsers } from "../lib/app-user-store";
 import { getStats as getBotStats } from "../lib/user-store";
+import { TncApiError, TncLoginRequiredError, getSharedTncSession, loginSharedTncStudent, resetTncDeviceAndLogin, tncProtectedRequest, tncPublicRequest } from "../lib/tnc-session";
 
 const router = Router();
 
@@ -49,7 +50,7 @@ function buildMediaUrl(path: string | undefined | null): string | null {
 }
 
 function parseCourse(row: Record<string, unknown>) {
-  const json = (row.json as Record<string, unknown>) ?? {};
+  const json = typeof row.json === "string" ? JSON.parse(row.json) as Record<string, unknown> : (row.json as Record<string, unknown>) ?? {};
   const at = (json._at as Record<string, unknown>) ?? {};
   return {
     id: row.id,
@@ -146,7 +147,7 @@ function convertFirebaseStorageUrl(url: string): string {
 }
 
 function parseChapter(row: Record<string, unknown>) {
-  const json = (row.json as Record<string, unknown>) ?? {};
+  const json = typeof row.json === "string" ? JSON.parse(row.json) as Record<string, unknown> : (row.json as Record<string, unknown>) ?? {};
   const title = (json._na ?? "Untitled") as string;
   const derivedSubject = deriveSubject(title);
   const vi = (json._vi as Record<string, unknown>) ?? {};
@@ -176,8 +177,8 @@ function parseChapter(row: Record<string, unknown>) {
       vi.video_url,
       deVi._vi_url,
       deVi.video_url,
-      json._de?._vi?._vi_url,
-      json._de?._vi?.url,
+      deVi._vi_url,
+      deVi.url,
     ].filter(Boolean) as string[];
 
     for (const raw of rawVideoUrls) {
@@ -345,7 +346,7 @@ function parseAdminUser(row: Record<string, unknown>) {
 }
 
 function parseExam(row: Record<string, unknown>) {
-  const json = (row.json as Record<string, unknown>) ?? {};
+  const json = typeof row.json === "string" ? JSON.parse(row.json) as Record<string, unknown> : (row.json as Record<string, unknown>) ?? {};
   const quRefids = (row.qu_refid as string[]) ?? [];
   return {
     examId: row.row_id as string,
@@ -363,7 +364,7 @@ function parseExam(row: Record<string, unknown>) {
 }
 
 function parseQuestion(row: Record<string, unknown>) {
-  const json = (row.json as Record<string, unknown>) ?? {};
+  const json = typeof row.json === "string" ? JSON.parse(row.json) as Record<string, unknown> : (row.json as Record<string, unknown>) ?? {};
   const quObj = (json._qu as Record<string, unknown>) ?? {};
   const ops = (json._op as Record<string, Record<string, unknown>>) ?? {};
   const soObj = (json._so as Record<string, unknown>) ?? {};
@@ -385,10 +386,7 @@ function parseQuestion(row: Record<string, unknown>) {
 // GET /api/courses — newest first
 router.get("/courses", async (_req: Request, res: Response): Promise<void> => {
   try {
-    const data = await crmQuery({
-      fn: "common_fn", se: "fe", sch: "t_co",
-      data: { json: "*" }, cond: {},
-    });
+    const data = await tncProtectedRequest("fe_co");
     const courses = Array.isArray(data)
       ? (data as Record<string, unknown>[]).map(parseCourse)
       : [];
@@ -400,6 +398,10 @@ router.get("/courses", async (_req: Request, res: Response): Promise<void> => {
     });
     res.json(courses);
   } catch (err) {
+    if (err instanceof TncLoginRequiredError) {
+      res.status(428).json({ error: "TNC login required", code: "TNC_LOGIN_REQUIRED" });
+      return;
+    }
     logger.error({ err }, "Failed to fetch courses");
     res.status(500).json({ error: "Failed to fetch courses" });
   }
@@ -409,17 +411,28 @@ router.get("/courses", async (_req: Request, res: Response): Promise<void> => {
 router.get("/subjects", async (req: Request, res: Response): Promise<void> => {
   try {
     const { courseId } = req.query;
-
-    const cond = courseId ? { co_refid: courseId } : {};
+    const batches = await tncProtectedRequest("fe_co");
+    const batch = Array.isArray(batches)
+      ? (batches as Record<string, unknown>[]).find((row) => row.row_id === courseId)
+      : undefined;
+    const batchJson = typeof batch?.json === "string"
+      ? JSON.parse(batch.json) as Record<string, unknown>
+      : (batch?.json as Record<string, unknown>) ?? {};
+    const subjectIds = Array.isArray(batchJson._su) ? [...new Set(batchJson._su as string[])] : [];
+    const chapterIds = Array.isArray(batchJson._ch) ? [...new Set(batchJson._ch as string[])] : [];
+    const parentCourseIds = Array.isArray(batchJson._co) ? batchJson._co as string[] : [];
     const [contentData, subjectData] = await Promise.all([
-      crmQuery({ fn: "common_fn", se: "fe", sch: "t_ch", data: { json: "*" }, cond }),
-      crmQuery({ fn: "common_fn", se: "fe", sch: "t_su", data: { json: "*" }, cond }),
+      tncProtectedRequest("fe", { json: "*" }, { sch: "t_ch", cond: { "(row_id)": chapterIds } }),
+      tncProtectedRequest("fe", { json: "*" }, {
+        sch: "t_su",
+        cond: subjectIds.length ? { "(row_id)": subjectIds } : { co_refid: parentCourseIds[0] ?? "" },
+      }),
     ]);
     const subjects: Array<Record<string, unknown> & { rowId: string; name: string; videoCount: number; pdfCount: number; totalCount: number }> = [];
     const subjectById = new Map<string, (typeof subjects)[number]>();
     if (Array.isArray(subjectData)) {
       for (const row of subjectData as Record<string, unknown>[]) {
-        const json = (row.json as Record<string, unknown>) ?? {};
+        const json = typeof row.json === "string" ? JSON.parse(row.json) as Record<string, unknown> : (row.json as Record<string, unknown>) ?? {};
         const rowId = String(row.row_id ?? "").trim();
         if (!rowId) continue;
         const subject = {
@@ -470,6 +483,10 @@ router.get("/subjects", async (req: Request, res: Response): Promise<void> => {
     });
     res.json(subjects);
   } catch (err) {
+    if (err instanceof TncLoginRequiredError) {
+      res.status(428).json({ error: "TNC login required", code: "TNC_LOGIN_REQUIRED" });
+      return;
+    }
     logger.error({ err }, "Failed to fetch subjects");
     res.status(500).json({ error: "Failed to fetch subjects" });
   }
@@ -577,12 +594,16 @@ router.get("/notes", async (req: Request, res: Response): Promise<void> => {
   try {
     const { courseId, limit: limitParam } = req.query;
     const cond: Record<string, unknown> = {};
-    if (courseId) cond.co_refid = courseId;
+    if (typeof courseId === "string") {
+      const batches = await tncProtectedRequest("fe_co");
+      const batch = Array.isArray(batches)
+        ? (batches as Record<string, unknown>[]).find((row) => row.row_id === courseId)
+        : undefined;
+      const json = typeof batch?.json === "string" ? JSON.parse(batch.json) as Record<string, unknown> : (batch?.json as Record<string, unknown>) ?? {};
+      cond["(row_id)"] = Array.isArray(json._ch) ? json._ch : [];
+    }
 
-    const data = await crmQuery({
-      fn: "common_fn", se: "fe", sch: "t_ch",
-      data: { json: "*" }, cond,
-    });
+    const data = await tncProtectedRequest("fe", { json: "*" }, { sch: "t_ch", cond });
 
     if (!Array.isArray(data)) {
       res.json([]);
@@ -606,6 +627,10 @@ router.get("/notes", async (req: Request, res: Response): Promise<void> => {
     const limit = courseId ? sessions.length : Math.min(parseInt(String(limitParam ?? "60")), 200);
     res.json(sessions.slice(0, limit));
   } catch (err) {
+    if (err instanceof TncLoginRequiredError) {
+      res.status(428).json({ error: "TNC login required", code: "TNC_LOGIN_REQUIRED" });
+      return;
+    }
     logger.error({ err }, "Failed to fetch notes");
     res.status(500).json({ error: "Failed to fetch notes" });
   }
@@ -616,13 +641,17 @@ router.get("/sessions", async (req: Request, res: Response): Promise<void> => {
   try {
     const { courseId, subjectId, limit: limitParam, type, sort, page: pageParam, search } = req.query;
     const cond: Record<string, unknown> = {};
-    if (courseId) cond.co_refid = courseId;
+    if (typeof courseId === "string") {
+      const batches = await tncProtectedRequest("fe_co");
+      const batch = Array.isArray(batches)
+        ? (batches as Record<string, unknown>[]).find((row) => row.row_id === courseId)
+        : undefined;
+      const json = typeof batch?.json === "string" ? JSON.parse(batch.json) as Record<string, unknown> : (batch?.json as Record<string, unknown>) ?? {};
+      cond["(row_id)"] = Array.isArray(json._ch) ? json._ch : [];
+    }
     const requestedSubjectId = typeof subjectId === "string" ? subjectId.trim() : "";
 
-    const data = await crmQuery({
-      fn: "common_fn", se: "fe", sch: "t_ch",
-      data: { json: "*" }, cond,
-    });
+    const data = await tncProtectedRequest("fe", { json: "*" }, { sch: "t_ch", cond });
 
     if (!Array.isArray(data)) {
       res.json(courseId ? [] : { sessions: [], total: 0 });
@@ -681,6 +710,10 @@ router.get("/sessions", async (req: Request, res: Response): Promise<void> => {
 
     res.json(sessions);
   } catch (err) {
+    if (err instanceof TncLoginRequiredError) {
+      res.status(428).json({ error: "TNC login required", code: "TNC_LOGIN_REQUIRED" });
+      return;
+    }
     logger.error({ err }, "Failed to fetch sessions");
     res.status(500).json({ error: "Failed to fetch sessions" });
   }
@@ -690,16 +723,17 @@ router.get("/sessions", async (req: Request, res: Response): Promise<void> => {
 router.get("/sessions/:rowId", async (req: Request, res: Response): Promise<void> => {
   try {
     const { rowId } = req.params;
-    const data = await crmQuery({
-      fn: "common_fn", se: "fe", sch: "t_ch",
-      data: { json: "*" }, cond: { row_id: rowId },
-    });
+    const data = await tncProtectedRequest("fe", { json: "*" }, { sch: "t_ch", cond: { "(row_id)": [rowId] } });
     if (!Array.isArray(data) || data.length === 0) {
       res.status(404).json({ error: "Session not found" });
       return;
     }
     res.json(parseChapter((data as Record<string, unknown>[])[0]));
   } catch (err) {
+    if (err instanceof TncLoginRequiredError) {
+      res.status(428).json({ error: "TNC login required", code: "TNC_LOGIN_REQUIRED" });
+      return;
+    }
     logger.error({ err }, "Failed to fetch session");
     res.status(500).json({ error: "Failed to fetch session" });
   }
@@ -715,8 +749,8 @@ router.get("/search", async (req: Request, res: Response): Promise<void> => {
     }
 
     const [coursesData, quizzesData] = await Promise.all([
-      crmQuery({ fn: "common_fn", se: "fe", sch: "t_co", data: { json: "*" }, cond: {} }),
-      crmQuery({ fn: "common_fn", se: "fe", sch: "t_ex", data: { json: "*", qu_refid: "*" }, cond: {} }),
+      tncProtectedRequest("fe_co"),
+      tncProtectedRequest("fe_ex"),
     ]);
 
     const courses = Array.isArray(coursesData)
@@ -729,7 +763,7 @@ router.get("/search", async (req: Request, res: Response): Promise<void> => {
     const quizzes = Array.isArray(quizzesData)
       ? (quizzesData as Record<string, unknown>[])
           .filter((row) => {
-            const json = (row.json as Record<string, unknown>) ?? {};
+            const json = typeof row.json === "string" ? JSON.parse(row.json) as Record<string, unknown> : (row.json as Record<string, unknown>) ?? {};
             return String(json._ex_na ?? "").toLowerCase().includes(q);
           })
           .map(parseExam)
@@ -738,6 +772,10 @@ router.get("/search", async (req: Request, res: Response): Promise<void> => {
 
     res.json({ courses, sessions: [], quizzes });
   } catch (err) {
+    if (err instanceof TncLoginRequiredError) {
+      res.status(428).json({ error: "TNC login required", code: "TNC_LOGIN_REQUIRED" });
+      return;
+    }
     logger.error({ err }, "Search failed");
     res.status(500).json({ error: "Search failed" });
   }
@@ -774,6 +812,68 @@ router.post("/auth/login", async (req: Request, res: Response): Promise<void> =>
   } catch (err) {
     logger.error({ err }, "Login failed");
     res.status(500).json({ error: "Login failed" });
+  }
+});
+
+// Shared upstream TNC student session used by course and test-series requests.
+router.get("/tnc/auth/session", async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const session = await getSharedTncSession();
+    res.json({ available: Boolean(session), expiresAt: session?.expires_at ?? null });
+  } catch (err) {
+    logger.error({ err }, "Failed to read shared TNC session");
+    res.status(503).json({ error: "TNC session storage is unavailable" });
+  }
+});
+
+router.post("/tnc/auth/login", async (req: Request, res: Response): Promise<void> => {
+  const { mobile, password } = req.body as { mobile?: string; password?: string };
+  if (!mobile || !password) {
+    res.status(400).json({ error: "Mobile and password required" });
+    return;
+  }
+  try {
+    await loginSharedTncStudent(mobile, password);
+    res.json({ available: true });
+  } catch (err) {
+    if (err instanceof TncApiError && err.message === "Already Logged In") {
+      res.status(409).json({ error: err.message, code: "TNC_DEVICE_CONFLICT" });
+      return;
+    }
+    if (err instanceof TncApiError && /invalid credentials/i.test(err.message)) {
+      res.status(401).json({ error: "Invalid TNC mobile number or password" });
+      return;
+    }
+    logger.error({ err }, "TNC student login failed");
+    res.status(502).json({ error: err instanceof Error ? err.message : "TNC login failed" });
+  }
+});
+
+router.post("/tnc/auth/send-otp", async (req: Request, res: Response): Promise<void> => {
+  const { mobile } = req.body as { mobile?: string };
+  if (!mobile) {
+    res.status(400).json({ error: "Mobile required" });
+    return;
+  }
+  try {
+    res.json(await tncPublicRequest("se_ot", { mob: mobile }));
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Could not send OTP" });
+  }
+});
+
+router.post("/tnc/auth/reset-device", async (req: Request, res: Response): Promise<void> => {
+  const { mobile, password, otp } = req.body as { mobile?: string; password?: string; otp?: string };
+  if (!mobile || !password || !otp) {
+    res.status(400).json({ error: "Mobile, password, and OTP required" });
+    return;
+  }
+  try {
+    await resetTncDeviceAndLogin(mobile, password, otp);
+    res.json({ available: true });
+  } catch (err) {
+    logger.warn({ err }, "TNC device reset failed");
+    res.status(400).json({ error: err instanceof Error ? err.message : "Could not reset TNC device" });
   }
 });
 
@@ -986,10 +1086,7 @@ router.get("/quizzes", async (req: Request, res: Response): Promise<void> => {
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
     const search = ((req.query.search as string) ?? "").toLowerCase();
 
-    const data = await crmQuery({
-      fn: "common_fn", se: "fe", sch: "t_ex",
-      data: { json: "*", qu_refid: "*" }, cond: {},
-    });
+    const data = await tncProtectedRequest("fe_ex");
 
     if (!Array.isArray(data)) {
       res.json({ quizzes: [], total: 0, page, limit });
@@ -1018,6 +1115,10 @@ router.get("/quizzes", async (req: Request, res: Response): Promise<void> => {
 
     res.json({ quizzes: paged.map(parseExam), total, page, limit });
   } catch (err) {
+    if (err instanceof TncLoginRequiredError) {
+      res.status(428).json({ error: "TNC login required", code: "TNC_LOGIN_REQUIRED" });
+      return;
+    }
     logger.error({ err }, "Failed to fetch quizzes");
     res.status(500).json({ error: "Failed to fetch quizzes" });
   }
@@ -1028,10 +1129,7 @@ router.get("/quiz/:examId", async (req: Request, res: Response): Promise<void> =
   try {
     const { examId } = req.params;
 
-    const data = await crmQuery({
-      fn: "common_fn", se: "fe", sch: "t_ex",
-      data: { json: "*", qu_refid: "*" }, cond: { row_id: examId },
-    });
+    const data = await tncProtectedRequest("fe_ex", { examids: [examId], type: "with_label" });
 
     if (!Array.isArray(data) || data.length === 0) {
       res.status(404).json({ error: "Quiz not found" });
@@ -1051,10 +1149,7 @@ router.get("/quiz/:examId", async (req: Request, res: Response): Promise<void> =
 
     const batchResults = await Promise.all(
       batches.map((ids) =>
-        crmQuery({
-          fn: "common_fn", se: "fe", sch: "t_qu",
-          data: { json: "*" }, cond: { row_id: ids },
-        })
+        tncProtectedRequest("fe", { json: "*" }, { sch: "t_qu", cond: { "(row_id)": ids } })
       )
     );
 
@@ -1076,6 +1171,10 @@ router.get("/quiz/:examId", async (req: Request, res: Response): Promise<void> =
       questions,
     });
   } catch (err) {
+    if (err instanceof TncLoginRequiredError) {
+      res.status(428).json({ error: "TNC login required", code: "TNC_LOGIN_REQUIRED" });
+      return;
+    }
     logger.error({ err }, "Failed to fetch quiz");
     res.status(500).json({ error: "Failed to fetch quiz" });
   }
