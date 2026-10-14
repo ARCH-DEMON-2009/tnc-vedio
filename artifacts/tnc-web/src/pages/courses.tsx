@@ -6,6 +6,7 @@ import Layout from "@/components/Layout";
 import { getUser } from "@/lib/auth";
 import { motion } from "framer-motion";
 import { toggleFavorite, getFavorites } from "@/lib/streak";
+import CoursePrice from "@/components/CoursePrice";
 
 const PAGE_SIZE = 18;
 
@@ -187,6 +188,7 @@ export default function CoursesPage() {
                       {course.description && course.description !== "Description" && (
                         <p className="text-xs text-gray-500 line-clamp-2 mb-2">{course.description}</p>
                       )}
+                      <CoursePrice price={course.price} />
                       <div className="flex gap-2 mt-auto pt-3">
                         <Link
                           href={`/courses/${course.rowId}`}

@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import Layout from "@/components/Layout";
 import { getStreakData } from "@/lib/streak";
 import { getUser } from "@/lib/auth";
+import CoursePrice from "@/components/CoursePrice";
 
 function SliderCarousel() {
   const { data: sliders, isLoading } = useGetSliders();
@@ -142,7 +143,7 @@ function StreakWidget() {
   );
 }
 
-function CourseCard({ course }: { course: { id: number; rowId: string; name: string; description: string; imageUrl?: string | null; createdAt?: string } }) {
+function CourseCard({ course }: { course: { id: number; rowId: string; name: string; description: string; price?: string; imageUrl?: string | null; createdAt?: string } }) {
   const isNew = course.createdAt
     ? (Date.now() - new Date(course.createdAt).getTime()) / (1000 * 60 * 60 * 24) <= 30
     : false;
@@ -171,6 +172,7 @@ function CourseCard({ course }: { course: { id: number; rowId: string; name: str
         {course.description && course.description !== "" && course.description !== "Description" && (
           <p className="text-xs text-gray-500 line-clamp-2 mb-3">{course.description}</p>
         )}
+        <CoursePrice price={course.price} />
         <div className="flex gap-2 mt-3">
           <Link
             href={`/courses/${course.rowId}`}

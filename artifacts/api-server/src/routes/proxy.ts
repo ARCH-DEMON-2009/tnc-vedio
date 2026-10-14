@@ -49,6 +49,26 @@ function buildMediaUrl(path: string | undefined | null): string | null {
   return `${CRM_BASE}/${path.replace(/^\//, "")}`;
 }
 
+function courseDescriptionText(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/\\x3c/gi, "<")
+    .replace(/\\x3e/gi, ">")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(?:div|p|li|h[1-6])\s*>/gi, "\n")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;|&#160;|&#x0*a0;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/[ \t\f\v]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
 function parseCourse(row: Record<string, unknown>) {
   const json = typeof row.json === "string" ? JSON.parse(row.json) as Record<string, unknown> : (row.json as Record<string, unknown>) ?? {};
   const at = (json._at as Record<string, unknown>) ?? {};
@@ -56,7 +76,8 @@ function parseCourse(row: Record<string, unknown>) {
     id: row.id,
     rowId: row.row_id,
     name: json._na ?? "",
-    description: json._de ?? "",
+    description: courseDescriptionText(json._de),
+    price: String(json._pr ?? ""),
     serialNo: json._sno ?? "",
     imageUrl: buildMediaUrl(at.url as string),
     createdAt: row.cr_on as string,
