@@ -3,6 +3,7 @@ import { logger } from "../lib/logger";
 import { getCachedFirebaseVideoUrl, isFirebaseConfigured, isUserAuthConfigured, isServiceAccountConfigured, signInWithEmailPassword, streamFirebaseVideo } from "../lib/firebase-rest";
 import { authenticateAppUser, createAppUser, findAppUser, listAppUsers } from "../lib/app-user-store";
 import { getStats as getBotStats } from "../lib/user-store";
+import { listAdminDirectoryUsers } from "../lib/admin-directory";
 import { TncApiError, TncLoginRequiredError, getSharedTncSession, loginSharedTncStudent, resetTncDeviceAndLogin, tncProtectedRequest, tncPublicRequest } from "../lib/tnc-session";
 
 const router = Router();
@@ -993,11 +994,10 @@ router.get("/admin/users", async (req: Request, res: Response): Promise<void> =>
   try {
     const search = typeof req.query.search === "string" ? req.query.search.trim().toLowerCase() : "";
     const page = Math.max(1, Number(req.query.page) || 1);
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
-    const allUsers = await listAppUsers();
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+    const allUsers = await listAdminDirectoryUsers();
     const filtered = search
-      ? allUsers.filter((user) => [user.name, user.mobile, user.email, user.college, user.state]
-        .some((value) => value?.toLowerCase().includes(search)))
+      ? allUsers.filter((user) => JSON.stringify(user).toLowerCase().includes(search))
       : allUsers;
     const start = (page - 1) * limit;
     res.json({
@@ -1005,7 +1005,8 @@ router.get("/admin/users", async (req: Request, res: Response): Promise<void> =>
       total: filtered.length,
       page,
       limit,
-      credentials: { revealable: false, reason: "Passwords are stored as one-way hashes and cannot be recovered." },
+      sources: { app: "Registered accounts", telegram: "Telegram users", mobile: "Mobile installs" },
+      redactedFields: ["passwords", "tokens", "secrets", "credentials", "API keys"],
     });
   } catch (err) {
     logger.error({ err }, "Failed to fetch app students");
