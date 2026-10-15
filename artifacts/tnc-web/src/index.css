@@ -306,3 +306,45 @@ button, a, input, select, textarea {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
+
+.winter-season {
+  background-image:
+    radial-gradient(ellipse at 8% 0%, rgba(186, 230, 253, 0.14), transparent 36%),
+    radial-gradient(ellipse at 92% 24%, rgba(219, 234, 254, 0.12), transparent 34%);
+}
+
+.winter-season > header {
+  box-shadow: 0 1px 0 rgba(219, 234, 254, 0.24), 0 5px 18px rgba(20, 74, 105, 0.12);
+}
+
+.winter-snowfall {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+}
+
+.winter-snowfall__flake {
+  position: absolute;
+  top: -2rem;
+  color: rgba(255, 255, 255, 0.68);
+  text-shadow: 0 0 7px rgba(186, 230, 253, 0.9);
+  animation-name: winter-snowfall-drift;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform;
+}
+
+@keyframes winter-snowfall-drift {
+  to {
+    transform: translate3d(28px, 110vh, 0) rotate(240deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .winter-snowfall {
+    display: none;
+  }
+}

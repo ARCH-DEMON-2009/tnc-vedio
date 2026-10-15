@@ -5,6 +5,7 @@ import { getUser, isAdmin, clearAdminToken } from "@/lib/auth";
 import { openExternalLink } from "@/lib/telegram";
 import { getTelegramUser } from "@/lib/telegram";
 import TncLoginPrompt from "@/components/TncLoginPrompt";
+import WinterSnowfall from "@/components/WinterSnowfall";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -153,7 +154,8 @@ export default function Layout({ children }: LayoutProps) {
   }
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ backgroundColor: "hsl(var(--background))" }}>
+    <div className="winter-season min-h-screen flex flex-col" style={{ backgroundColor: "hsl(var(--background))" }}>
+      <WinterSnowfall />
       {/* Desktop Top Nav */}
       <header className="sticky top-0 z-50 hidden border-b border-white/10 bg-[hsl(var(--primary))] shadow-lg md:block">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
