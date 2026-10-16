@@ -25,12 +25,16 @@ import QuizTakePage from "@/pages/quiz-take";
 import BuyPage from "@/pages/buy";
 import WinterEffectsProvider, { useWinterEffects } from "@/components/WinterEffectsProvider";
 import WinterSnowfall from "@/components/WinterSnowfall";
+import { ApiError } from "@/lib/api-client/custom-fetch";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 60_000,
-      retry: 1,
+      retry: (failureCount, error) => {
+        if (error instanceof ApiError && error.status === 428) return false;
+        return failureCount < 1;
+      },
     },
   },
 });

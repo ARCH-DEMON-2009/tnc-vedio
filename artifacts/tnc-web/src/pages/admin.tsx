@@ -51,9 +51,13 @@ function StudentsDirectory() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(search);
-    }, 250);
+    }, 400);
     return () => clearTimeout(timer);
   }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["admin-user-directory", debouncedSearch, page],
@@ -64,6 +68,8 @@ function StudentsDirectory() {
         headers: { "x-admin-token": getAdminToken() ?? "" },
       });
     },
+    staleTime: 30_000,
+    placeholderData: (previousData) => previousData,
   });
 
   const students = data?.users ?? [];
@@ -90,7 +96,7 @@ function StudentsDirectory() {
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
         <input
           value={search}
-          onChange={(event) => { setSearch(event.target.value); setPage(1); }}
+          onChange={(event) => setSearch(event.target.value)}
           placeholder="Search every user field: name, ID, contact, platform, activity..."
           className="w-full rounded-xl border border-gray-200 pl-9 pr-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500" 
         />

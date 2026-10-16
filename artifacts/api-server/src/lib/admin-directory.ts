@@ -1,8 +1,11 @@
 import { supabaseRequest } from "./supabase-rest";
-import { tncOptionalAuthRequest } from "./tnc-session";
+import { getSharedTncSession, tncOptionalAuthRequest } from "./tnc-session";
 
 const PAGE_SIZE = 500;
 const CRM_PAGE_SIZE = 500;
+const CRM_PAGE_CONCURRENCY = 8;
+const DIRECTORY_CACHE_MS = 30_000;
+const PARTIAL_DIRECTORY_CACHE_MS = 15_000;
 const SENSITIVE_FIELD = /(password|pass|(?:^|[_-])pa(?:$|[_-])|token|secret|authorization|credential|api[_-]?key|otp|jwt)/i;
 
 type SafeValue = string | number | boolean | null | SafeValue[] | { [key: string]: SafeValue };
@@ -14,6 +17,14 @@ export interface AdminDirectoryUser {
   details: Record<string, SafeValue>;
   activityAt: string | null;
 }
+
+type AdminDirectoryResult = {
+  users: AdminDirectoryUser[];
+  unavailableSources: string[];
+};
+
+let directoryCache: { value: AdminDirectoryResult; expiresAt: number } | null = null;
+let directoryLoad: Promise<AdminDirectoryResult> | null = null;
 
 function redact(value: unknown): SafeValue | undefined {
   if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
@@ -59,18 +70,29 @@ function unwrapCrmJson(value: unknown): Record<string, unknown> {
 }
 
 async function fetchCrmUsers(): Promise<AdminDirectoryUser[]> {
+  if (!await getSharedTncSession()) throw new Error("No shared TNC session is available");
   const rows: Record<string, unknown>[] = [];
-  for (let page = 1; page <= 100; page += 1) {
-    const result = await tncOptionalAuthRequest("fe", { json: "*" }, {
-      sch: "t_us",
-      cond: {},
-      page,
-      limit: CRM_PAGE_SIZE,
-    });
-    if (!Array.isArray(result)) throw new Error("CRM user list response was not an array");
-    rows.push(...result as Record<string, unknown>[]);
-    if (result.length < CRM_PAGE_SIZE) break;
-    if (page === 100) throw new Error("CRM user list exceeded the paging limit");
+  for (let firstPage = 1; firstPage <= 100; firstPage += CRM_PAGE_CONCURRENCY) {
+    const pages = await Promise.all(Array.from({ length: CRM_PAGE_CONCURRENCY }, (_, index) => {
+      const page = firstPage + index;
+      return tncOptionalAuthRequest("fe", { json: "*" }, {
+        sch: "t_us",
+        cond: {},
+        page,
+        limit: CRM_PAGE_SIZE,
+      });
+    }));
+    let foundLastPage = false;
+    for (const result of pages) {
+      if (!Array.isArray(result)) throw new Error("CRM user list response was not an array");
+      rows.push(...result as Record<string, unknown>[]);
+      if (result.length < CRM_PAGE_SIZE) {
+        foundLastPage = true;
+        break;
+      }
+    }
+    if (foundLastPage) break;
+    if (firstPage + CRM_PAGE_CONCURRENCY > 100) throw new Error("CRM user list exceeded the paging limit");
   }
 
   return rows.map((row) => {
@@ -106,10 +128,7 @@ function toDirectoryUser(
   };
 }
 
-export async function listAdminDirectoryUsers(): Promise<{
-  users: AdminDirectoryUser[];
-  unavailableSources: string[];
-}> {
+async function loadAdminDirectoryUsers(): Promise<AdminDirectoryResult> {
   const [appRows, telegramRows, mobileRows] = await Promise.all([
     fetchAllRows<Record<string, unknown>>("app_users", "id.asc"),
     fetchAllRows<Record<string, unknown>>("bot_users", "id.asc"),
@@ -146,4 +165,28 @@ export async function listAdminDirectoryUsers(): Promise<{
     ],
     unavailableSources,
   };
+}
+
+export async function listAdminDirectoryUsers(): Promise<AdminDirectoryResult> {
+  if (directoryCache && Date.now() < directoryCache.expiresAt) {
+    return directoryCache.value;
+  }
+  if (directoryLoad) return directoryLoad;
+
+  const load = loadAdminDirectoryUsers();
+  directoryLoad = load;
+  try {
+    const value = await load;
+    directoryCache = {
+      value,
+      expiresAt: Date.now() + (value.unavailableSources.length ? PARTIAL_DIRECTORY_CACHE_MS : DIRECTORY_CACHE_MS),
+    };
+    return value;
+  } finally {
+    if (directoryLoad === load) directoryLoad = null;
+  }
+}
+
+export function invalidateAdminDirectoryCache(): void {
+  directoryCache = null;
 }
