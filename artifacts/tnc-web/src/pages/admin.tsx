@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAdminLogin, useGetAdminStats, useTogglePromo, useGetPromoStatus, getGetPromoStatusQueryKey, customFetch } from "@/lib/api-client";
-import { Shield, Users, BookOpen, Video, ShoppingCart, LogOut, ToggleLeft, ToggleRight, RefreshCw, Calendar, Plus, Minus, Clock, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Shield, Users, BookOpen, Video, ShoppingCart, LogOut, ToggleLeft, ToggleRight, RefreshCw, Calendar, Plus, Minus, Clock, Search, ChevronLeft, ChevronRight, Snowflake } from "lucide-react";
 import { getAdminToken, setAdminToken, clearAdminToken } from "@/lib/auth";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { Link } from "wouter";
+import { useWinterEffects } from "@/components/WinterEffectsProvider";
 
 const QUICK_DAYS = [7, 14, 30, 60, 90];
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
@@ -20,7 +21,7 @@ const ADMIN_USER_PAGE_SIZE = 50;
 
 interface AdminDirectoryUser {
   id: string;
-  source: "app" | "telegram" | "mobile";
+  source: "app" | "telegram" | "mobile" | "crm";
   name: string;
   details: Record<string, unknown>;
   activityAt: string | null;
@@ -31,6 +32,7 @@ interface AdminDirectoryResponse {
   total: number;
   page: number;
   limit: number;
+  unavailableSources?: string[];
 }
 
 function displayAdminValue(value: unknown): string {
@@ -74,7 +76,7 @@ function StudentsDirectory() {
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <h2 className="text-lg font-black text-gray-900">All Users</h2>
-          <p className="text-sm text-gray-500">{(data?.total ?? 0).toLocaleString()} accounts across app, Telegram, and mobile</p>
+          <p className="text-sm text-gray-500">{(data?.total ?? 0).toLocaleString()} users across CRM, app, Telegram, and mobile</p>
         </div>
         <button
           onClick={() => void refetch()}
@@ -109,6 +111,11 @@ function StudentsDirectory() {
             Retry
           </button>
         </div>
+      )}
+      {data?.unavailableSources?.includes("crm") && (
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          CRM users require a valid TNC session. <Link href="/courses" className="font-semibold underline">Sign in on Courses</Link>, return here, and refresh the directory.
+        </p>
       )}
 
       {isLoading && !data && (
@@ -497,6 +504,7 @@ function PromoManager() {
 function AdminDashboard() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { enabled: winterEffectsEnabled, toggle: toggleWinterEffects } = useWinterEffects();
 
   const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useGetAdminStats();
 
@@ -519,6 +527,17 @@ function AdminDashboard() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleWinterEffects}
+            className="winter-admin-effect-toggle"
+            title={winterEffectsEnabled ? "Turn snowfall off" : "Turn snowfall on"}
+            aria-label={winterEffectsEnabled ? "Turn snowfall off" : "Turn snowfall on"}
+            aria-pressed={winterEffectsEnabled}
+            data-testid="btn-admin-winter-effects"
+          >
+            <Snowflake size={15} />
+          </button>
           <Link href="/" className="text-white/60 hover:text-white text-xs transition-colors px-2" data-testid="btn-admin-site">View Site</Link>
           <button onClick={handleLogout} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-medium transition-colors" data-testid="btn-admin-logout">
             <LogOut size={13} /> Logout

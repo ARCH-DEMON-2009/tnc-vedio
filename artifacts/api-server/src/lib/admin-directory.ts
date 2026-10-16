@@ -1,13 +1,15 @@
 import { supabaseRequest } from "./supabase-rest";
+import { tncOptionalAuthRequest } from "./tnc-session";
 
 const PAGE_SIZE = 500;
+const CRM_PAGE_SIZE = 500;
 const SENSITIVE_FIELD = /(password|pass|(?:^|[_-])pa(?:$|[_-])|token|secret|authorization|credential|api[_-]?key|otp|jwt)/i;
 
 type SafeValue = string | number | boolean | null | SafeValue[] | { [key: string]: SafeValue };
 
 export interface AdminDirectoryUser {
   id: string;
-  source: "app" | "telegram" | "mobile";
+  source: "app" | "telegram" | "mobile" | "crm";
   name: string;
   details: Record<string, SafeValue>;
   activityAt: string | null;
@@ -43,6 +45,47 @@ async function fetchAllRows<T>(table: string, order: string): Promise<T[]> {
   }
 }
 
+function unwrapCrmJson(value: unknown): Record<string, unknown> {
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+async function fetchCrmUsers(): Promise<AdminDirectoryUser[]> {
+  const rows: Record<string, unknown>[] = [];
+  for (let page = 1; page <= 100; page += 1) {
+    const result = await tncOptionalAuthRequest("fe", { json: "*" }, {
+      sch: "t_us",
+      cond: {},
+      page,
+      limit: CRM_PAGE_SIZE,
+    });
+    if (!Array.isArray(result)) throw new Error("CRM user list response was not an array");
+    rows.push(...result as Record<string, unknown>[]);
+    if (result.length < CRM_PAGE_SIZE) break;
+    if (page === 100) throw new Error("CRM user list exceeded the paging limit");
+  }
+
+  return rows.map((row) => {
+    const crmJson = unwrapCrmJson(row.json);
+    const flat = { ...row, ...crmJson };
+    return toDirectoryUser(
+      "crm",
+      row.row_id ?? crmJson._us_id ?? row.id,
+      crmJson._us_na ?? crmJson._na ?? row.mobilenumber ?? row.mobile ?? "CRM user",
+      flat,
+      row.up_on ?? row.cr_on ?? row.last_seen,
+    );
+  });
+}
+
 function toDirectoryUser(
   source: AdminDirectoryUser["source"],
   id: unknown,
@@ -63,14 +106,27 @@ function toDirectoryUser(
   };
 }
 
-export async function listAdminDirectoryUsers(): Promise<AdminDirectoryUser[]> {
+export async function listAdminDirectoryUsers(): Promise<{
+  users: AdminDirectoryUser[];
+  unavailableSources: string[];
+}> {
   const [appRows, telegramRows, mobileRows] = await Promise.all([
     fetchAllRows<Record<string, unknown>>("app_users", "id.asc"),
     fetchAllRows<Record<string, unknown>>("bot_users", "id.asc"),
     fetchAllRows<Record<string, unknown>>("mobile_app_users", "install_id.asc"),
   ]);
+  let crmUsers: AdminDirectoryUser[] = [];
+  let unavailableSources: string[] = [];
+  try {
+    crmUsers = await fetchCrmUsers();
+  } catch (error) {
+    unavailableSources = ["crm"];
+    const { logger } = await import("./logger");
+    logger.warn({ err: error }, "CRM users could not be added to the admin directory");
+  }
 
-  return [
+  return {
+    users: [
     ...appRows.map((row) => toDirectoryUser("app", row.user_id ?? row.id, row.name, row, row.updated_at ?? row.created_at)),
     ...telegramRows.map((row) => toDirectoryUser(
       "telegram",
@@ -86,5 +142,8 @@ export async function listAdminDirectoryUsers(): Promise<AdminDirectoryUser[]> {
       row,
       row.last_seen ?? row.first_seen,
     )),
-  ];
+      ...crmUsers,
+    ],
+    unavailableSources,
+  };
 }

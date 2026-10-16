@@ -22,6 +22,9 @@ import NotFound from "@/pages/not-found";
 import LeaderboardPage from "@/pages/leaderboard";
 import QuizPage from "@/pages/quiz";
 import QuizTakePage from "@/pages/quiz-take";
+import BuyPage from "@/pages/buy";
+import WinterEffectsProvider, { useWinterEffects } from "@/components/WinterEffectsProvider";
+import WinterSnowfall from "@/components/WinterSnowfall";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -87,11 +90,27 @@ function Router() {
       <Route path="/leaderboard" component={LeaderboardPage} />
       <Route path="/quiz" component={QuizPage} />
       <Route path="/quiz/:examId" component={QuizTakePage} />
+      <Route path="/buy" component={BuyPage} />
       <Route path="/admin" component={AdminPage} />
       <Route path="/watch/:sessionId" component={WatchPage} />
       <Route path="/pdf/:sessionId" component={PdfViewerPage} />
       <Route component={NotFound} />
     </Switch>
+  );
+}
+
+function WinterSiteRouter() {
+  const { enabled } = useWinterEffects();
+
+  return (
+    <div className="winter-site min-h-screen">
+      <WinterSnowfall enabled={enabled} />
+      <AppErrorBoundary>
+        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+          <Router />
+        </WouterRouter>
+      </AppErrorBoundary>
+    </div>
   );
 }
 
@@ -145,13 +164,11 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <SecurityGuard />
-        <AppErrorBoundary>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <Router />
-          </WouterRouter>
-        </AppErrorBoundary>
-        <Toaster />
+        <WinterEffectsProvider>
+          <SecurityGuard />
+          <WinterSiteRouter />
+          <Toaster />
+        </WinterEffectsProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );

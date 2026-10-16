@@ -106,6 +106,20 @@ export async function tncPublicRequest(se: string, data: Record<string, unknown>
   return callTnc({ se, data });
 }
 
+export async function tncOptionalAuthRequest(
+  se: string,
+  data: Record<string, unknown> = {},
+  extra: Record<string, unknown> = {},
+): Promise<unknown> {
+  const session = await getSharedTncSession();
+  try {
+    return await callTnc({ se, data, ...extra }, session?.token);
+  } catch (error) {
+    if (session && error instanceof TncLoginRequiredError) await clearSharedTncSession(session.token);
+    throw error;
+  }
+}
+
 export async function tncProtectedRequest(
   se: string,
   data: Record<string, unknown> = {},

@@ -995,7 +995,7 @@ router.get("/admin/users", async (req: Request, res: Response): Promise<void> =>
     const search = typeof req.query.search === "string" ? req.query.search.trim().toLowerCase() : "";
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
-    const allUsers = await listAdminDirectoryUsers();
+    const { users: allUsers, unavailableSources } = await listAdminDirectoryUsers();
     const filtered = search
       ? allUsers.filter((user) => JSON.stringify(user).toLowerCase().includes(search))
       : allUsers;
@@ -1005,8 +1005,9 @@ router.get("/admin/users", async (req: Request, res: Response): Promise<void> =>
       total: filtered.length,
       page,
       limit,
-      sources: { app: "Registered accounts", telegram: "Telegram users", mobile: "Mobile installs" },
-      redactedFields: ["passwords", "tokens", "secrets", "credentials", "API keys"],
+      sources: { app: "Registered accounts", telegram: "Telegram users", mobile: "Mobile installs", crm: "CRM users" },
+      unavailableSources,
+      redactedFields: ["passwords", "tokens", "secrets", "credentials", "API keys", "OTPs"],
     });
   } catch (err) {
     logger.error({ err }, "Failed to fetch app students");
